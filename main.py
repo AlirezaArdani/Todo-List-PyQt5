@@ -30,7 +30,7 @@ class TodoUi(QMainWindow):
         self.initUi()
         self.connect_signals()
         self.connect_db()
-        # self.load_from_db()
+        self.load_from_db()
 
     def initUi(self):
         # load ui and define widgets
@@ -54,11 +54,18 @@ class TodoUi(QMainWindow):
         # label of tasks count
         self.taskCountLabel = self.findChild(QLabel, "taskCountLabel")
 
+    def update_task_count(self):
+        """Updates the task count label."""
+
+        self.taskCountLabel.setText(f"Total Tasks: {len(self.tasks)}")
+
+    # logic stuff
     def connect_signals(self):
         """ connect button signals to functions"""
         self.addTask.clicked.connect(self.add_task)
         self.deleteTask.clicked.connect(self.delete)
         self.clear.clicked.connect(self.clear_table)
+        self.save.clicked.connect(self.save_to_db)
 
     def delete(self):
         current_row = self.taskTable.currentRow()
@@ -142,11 +149,6 @@ class TodoUi(QMainWindow):
         self.display_table()
         self.update_task_count()
 
-    def update_task_count(self):
-        """Updates the task count label."""
-
-        self.taskCountLabel.setText(f"Total Tasks: {len(self.tasks)}")
-
     #  database stuff
     def connect_db(self):
         try:
@@ -157,7 +159,7 @@ class TodoUi(QMainWindow):
                 database='test_project_db'
             )
             QTimer.singleShot(1500, lambda: (
-                QMessageBox.information(self, "Confirmation", "Database Connected")
+                QMessageBox.information(self, "Information", "Database Connected")
 
             ))
 
@@ -173,6 +175,7 @@ class TodoUi(QMainWindow):
             """)
             self.connection.commit()
 
+
         except mysql.connector.Error as error:
             if error.errno == errorcode.ER_ACCESS_DENIED_ERROR:
                 QMessageBox.critical(self, "DB Error", "Invalid username or password")
@@ -181,11 +184,47 @@ class TodoUi(QMainWindow):
             else:
                 QMessageBox.critical(self, "DB Error", str(error))
 
-    def load_from_db(self):
-        pass
-
     def save_to_db(self):
-        pass
+        """ Save Current Tasks to Database """
+        # Clear database
+        self.cursor.execute("""
+            DELETE FROM tasks
+        """)
+
+        for task in self.tasks:
+            self.cursor.execute(
+                "INSERT INTO tasks (id, task_name, duration, deadline) VALUES (%s, %s, %s, %s)",
+                (task.id, task.task_name, task.duration, task.deadline)
+            )
+
+        self.connection.commit()
+        QMessageBox.information(self, "Saved", "Tasks saved to database!")
+
+    def load_from_db(self):
+        """ load tasks from db to Table task"""
+        self.cursor.execute(
+            """
+            Select id, task_name, duration, deadline 
+            FROM tasks ORDER BY id
+            """
+        )
+        rows = self.cursor.fetchall()
+
+        for row in rows:
+            task_id, task_name, duration, deadline = row
+            todo_task = Todo(task_id, task_name, duration, deadline)
+            self.tasks.append(todo_task)
+            # insert at top : 0 or bottom
+            row_position = self.taskTable.rowCount()
+            self.taskTable.insertRow(row_position)
+            self.taskTable.setItem(row_position, 0, QTableWidgetItem(task_name))
+            self.taskTable.setItem(row_position, 1, QTableWidgetItem(duration))
+            self.taskTable.setItem(row_position, 2, QTableWidgetItem(deadline))
+
+        if rows:
+            self.next_id = max(t.id for t in self.tasks) + 1
+        self.display_table()
+        self.update_task_count()
 
 
 app = QApplication(sys.argv)
