@@ -1,14 +1,17 @@
-from PyQt5.QtWidgets import QMainWindow, QTableWidget, QLineEdit, QPushButton, QApplication, QLabel, QTableWidgetItem, \
-    QMessageBox
-from PyQt5.QtCore import Qt
+import mysql.connector
+from mysql.connector import errorcode
+
+from PyQt5.QtWidgets import (QMainWindow, QTableWidget, QLineEdit, QPushButton, QApplication, QLabel, QTableWidgetItem, \
+                             QMessageBox)
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5 import uic
 import sys
+
+
 # import sqlite3
-# import mysql.connector
-# from mysql.connector import errorcode
 
 class Todo:
-    """ Todo Class """
+    """ Todo Model Class """
 
     def __init__(self, task_id: int, task_name: str, duration: str, deadline: str):
         self.id = task_id  # each task with a unique id
@@ -26,8 +29,8 @@ class TodoUi(QMainWindow):
         self.next_id = 1
         self.initUi()
         self.connect_signals()
-
-
+        self.connect_db()
+        # self.load_from_db()
 
     def initUi(self):
         # load ui and define widgets
@@ -60,23 +63,41 @@ class TodoUi(QMainWindow):
     def delete(self):
         current_row = self.taskTable.currentRow()
         if current_row < 0:
-            return QMessageBox.warning(self, 'Warning', 'Please select a record to delete')
+            return QMessageBox.warning(self, 'Warning', 'Please select a task to delete')
 
         button = QMessageBox.question(
             self,
             'Confirmation',
-            'Are you sure that you want to delete the selected row?',
+            'Are you sure that you want to delete the selected task?',
             QMessageBox.StandardButton.Yes |
             QMessageBox.StandardButton.No
         )
         if button == QMessageBox.StandardButton.Yes:
+            # Get task name (or use ID if stored)
+            task_name = self.taskTable.item(current_row, 0).text()
+
+            # Remove row from table
             self.taskTable.removeRow(current_row)
-        task_name = self.taskTable.item(current_row, 0).text()
-        print(task_name)
 
+            # Remove matching object from list
+            self.tasks = [t for t in self.tasks if t.task_name != task_name]
 
+            # Reassign IDs
+            for idx, task in enumerate(self.tasks, start=1):
+                task.id = idx
+            self.next_id = len(self.tasks) + 1
+
+            # Update label
+            self.update_task_count()
+            for task in self.tasks:
+                print(task.task_name)
 
     def clear_table(self):
+        if self.taskTable.rowCount() == 0:
+            return QMessageBox.warning(
+                self,
+                'Warning',
+                'No tasks to be cleared!!')
         # Clear the table widget
         self.taskTable.setRowCount(0)
 
@@ -102,6 +123,10 @@ class TodoUi(QMainWindow):
         task = self.subjectEditor.text()
         duration = self.durationEditor.text()
         deadline = self.deadlineEditor.text()
+
+        if not deadline or not duration or not task:
+            return QMessageBox.warning(self, 'Warning',
+                                       'Please add task name or duration or deadline. can\'t be empty!!')
         # print(task, duration, deadline)
         # add to table
         todo_task = Todo(self.next_id, task, duration, deadline)
@@ -111,6 +136,9 @@ class TodoUi(QMainWindow):
         self.taskTable.setItem(0, 1, QTableWidgetItem(todo_task.duration))
         self.taskTable.setItem(0, 2, QTableWidgetItem(todo_task.deadline))
         self.next_id += 1
+        self.subjectEditor.clear()
+        self.durationEditor.clear()
+        self.deadlineEditor.clear()
         self.display_table()
         self.update_task_count()
 
@@ -118,6 +146,46 @@ class TodoUi(QMainWindow):
         """Updates the task count label."""
 
         self.taskCountLabel.setText(f"Total Tasks: {len(self.tasks)}")
+
+    #  database stuff
+    def connect_db(self):
+        try:
+            self.connection = mysql.connector.connect(
+                host='127.0.0.1',
+                user='root',
+                password='ali@22',
+                database='test_project_db'
+            )
+            QTimer.singleShot(1500, lambda: (
+                QMessageBox.information(self, "Confirmation", "Database Connected")
+
+            ))
+
+            self.cursor = self.connection.cursor()
+
+            self.cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INT PRIMARY KEY,
+                    task_name VARCHAR(255),
+                    duration VARCHAR(100),
+                    deadline VARCHAR(100)
+                )
+            """)
+            self.connection.commit()
+
+        except mysql.connector.Error as error:
+            if error.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                QMessageBox.critical(self, "DB Error", "Invalid username or password")
+            elif error.errno == errorcode.ER_BAD_DB_ERROR:
+                QMessageBox.critical(self, "DB Error", "Database does not exist")
+            else:
+                QMessageBox.critical(self, "DB Error", str(error))
+
+    def load_from_db(self):
+        pass
+
+    def save_to_db(self):
+        pass
 
 
 app = QApplication(sys.argv)
